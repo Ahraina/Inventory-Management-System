@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import Layout from '../components/Layout'
-import { getRequests, getReturns, addReturn } from '../data/store'
+import {
+  getMyApprovedBorrowRequests,
+  createReturnRequest,
+  getMyReturnRequests,
+} from '../services/requestService'
 
 export default function UserReturns() {
   const { user } = useAuth()
@@ -12,27 +16,43 @@ export default function UserReturns() {
 
   useEffect(() => { load() }, [])
 
-  function load() {
-    const reqs = getRequests().filter(r => r.who === user.email && r.status === 'approved')
-    const rets = getReturns().filter(r => r.who === user.email && r.status === 'approved')
+  async function load() {
+  try {
+    const reqs = await getMyApprovedBorrowRequests()
+    const rets = await getMyReturnRequests()
 
     const retMap = {}
+
     rets.forEach(r => {
-      const key = r.job_id + '|' + r.item
-      retMap[key] = (retMap[key] || 0) + r.qty
+      const key = r.borrow_request_id
+
+      retMap[key] = (retMap[key] || 0) + Number(r.quantity)
     })
 
     const list = reqs.map(r => {
-      const key = r.job_id + '|' + r.item
-      const returned = retMap[key] || 0
-      const remain = Math.max(0, r.qty - returned)
-      return { ...r, returned, remain }
+      const returned = retMap[r.id] || 0
+
+      const remain =
+        Math.max(0, Number(r.quantity) - returned)
+
+      return {
+        id: r.id,
+        job_id: r.job_id,
+        item: r.equipment?.name || '-',
+        qty: r.quantity,
+        returned,
+        remain
+      }
     }).filter(r => r.remain > 0)
 
     setReturnables(list)
     setSelected({})
     setNotes({})
+
+  } catch (error) {
+    console.log(error.message)
   }
+}
 
   function toggleSelect(key, checked) {
     setSelected(prev => ({ ...prev, [key]: checked }))
@@ -46,7 +66,7 @@ export default function UserReturns() {
     setSelected(next)
   }
 
-  function handleSubmit() {
+ async function handleSubmit() {
     const rows = returnables.filter(r => {
       const key = r.job_id + '|' + r.item
       return selected[key]
@@ -62,7 +82,12 @@ export default function UserReturns() {
       if (qty <= 0 || qty > r.remain) {
         return setStatus({ msg: `จำนวนไม่ถูกต้องสำหรับ ${r.item}`, ok: false })
       }
-      addReturn(r.job_id, r.item, qty, notes[key] || '', user.email)
+      await createReturnRequest({
+        borrow_request_id: r.id,
+        quantity: qty,
+        note: notes[key] || '',
+        status: 'pending'
+      })
     }
 
     setStatus({ msg: `✅ ส่งคำขอคืน ${rows.length} รายการเรียบร้อย (รอ Admin อนุมัติ)`, ok: true })

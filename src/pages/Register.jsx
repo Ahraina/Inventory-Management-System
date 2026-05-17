@@ -1,33 +1,70 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getUsers } from '../data/store'
+import { supabase } from '../utils/supabase'
 
 export default function Register() {
   const navigate = useNavigate()
   const [form, setForm] = useState({ name: '', email: '', password: '' })
   const [status, setStatus] = useState({ msg: '', ok: true })
 
-  function handleRegister() {
-    setStatus({ msg: '', ok: true })
-    const { name, email, password } = form
-    if (!email || !password) return setStatus({ msg: 'กรอกอีเมลและรหัสผ่าน', ok: false })
+  async function handleRegister() {
+  setStatus({ msg: '', ok: true })
 
-    const users = getUsers()
-    if (users.find(u => u.email === email)) {
-      return setStatus({ msg: 'อีเมลนี้มีผู้ใช้อยู่แล้ว', ok: false })
-    }
+  const { name, email, password } = form
 
-    // เพิ่ม user ใหม่
-    users.push({
-      id: crypto.randomUUID(),
-      email: email.trim().toLowerCase(),
-      password,
-      name: name.trim() || email,
-      role: 'user'
+  if (!email || !password) {
+    return setStatus({ msg: 'กรอกอีเมลและรหัสผ่าน', ok: false })
+  }
+
+  const { data, error } = await supabase.auth.signUp({
+    email: email.trim().toLowerCase(),
+    password
+  })
+
+  if (error) {
+  if (error.message.includes('rate limit')) {
+    return setStatus({
+      msg: 'ระบบส่งอีเมลยืนยันบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่อีกครั้ง',
+      ok: false
     })
-    localStorage.setItem('inv_users', JSON.stringify(users))
-    setStatus({ msg: 'สมัครเสร็จแล้ว! โปรดเข้าสู่ระบบ', ok: true })
-    setTimeout(() => navigate('/'), 1500)
+  }
+
+  return setStatus({ msg: error.message, ok: false })
+}
+
+  const userId = data.user?.id
+
+  if (userId) {
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .insert([
+        {
+          id: userId,
+          email: email.trim().toLowerCase(),
+          full_name: name.trim() || email,
+          role: 'user'
+        }
+      ])
+
+    if (profileError) {
+  if (
+    profileError.message.includes('duplicate key') ||
+    profileError.message.includes('profiles_email_key')
+  ) {
+    return setStatus({
+      msg: 'อีเมลนี้ถูกสมัครไว้แล้ว กรุณาเข้าสู่ระบบ หรือใช้อีเมลอื่น',
+      ok: false
+    })
+  }
+
+  return setStatus({ msg: profileError.message, ok: false })
+}
+  }
+
+  setStatus({
+  msg: 'สมัครสมาชิกสำเร็จ กรุณายืนยันอีเมลจาก Gmail ก่อนเข้าสู่ระบบ',
+  ok: true
+    })
   }
 
   return (

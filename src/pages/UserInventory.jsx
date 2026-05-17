@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import Layout from '../components/Layout'
-import { getInventory } from '../data/store'
+import { getEquipment } from '../services/equipmentService'
 
 export default function UserInventory() {
   const [inventory, setInventory] = useState([])
@@ -8,9 +8,14 @@ export default function UserInventory() {
 
   useEffect(() => { load() }, [])
 
-  function load() {
-    setInventory(getInventory())
+async function load() {
+  try {
+    const data = await getEquipment()
+    setInventory(data)
+  } catch (error) {
+    console.log(error.message)
   }
+}
 
   const LOW = 3
 
@@ -22,7 +27,7 @@ export default function UserInventory() {
 
   const filtered = inventory.filter(i =>
     !search ||
-    i.item.toLowerCase().includes(search.toLowerCase()) ||
+    i.name.toLowerCase().includes(search.toLowerCase()) ||
     (i.category || '').toLowerCase().includes(search.toLowerCase())
   )
 
@@ -59,8 +64,8 @@ export default function UserInventory() {
         <div className="grid grid-cols-3 gap-4">
           {[
             { label: 'รายการทั้งหมด', value: inventory.length, color: 'text-indigo-600' },
-            { label: 'ใกล้หมด (≤3)', value: inventory.filter(i => i.stock > 0 && i.stock <= LOW).length, color: 'text-amber-600' },
-            { label: 'หมดสต็อก', value: inventory.filter(i => i.stock <= 0).length, color: 'text-rose-600' },
+            { label: 'ใกล้หมด (≤3)', value: inventory.filter(i => i.available_quantity > 0 && i.available_quantity <= LOW).length, color: 'text-amber-600' },
+            { label: 'หมดสต็อก', value: inventory.filter(i => i.available_quantity <= 0).length, color: 'text-rose-600' },
           ].map(s => (
             <div key={s.label} className="bg-white dark:bg-slate-800 rounded-2xl shadow p-4 text-center">
               <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
@@ -84,11 +89,14 @@ export default function UserInventory() {
                   className="border border-gray-100 dark:border-slate-700 rounded-xl p-3 flex items-center justify-between"
                 >
                   <div>
-                    <div className="font-medium text-sm">{i.item}</div>
-                  </div>
-                  <span className={`px-2 py-0.5 rounded-full text-xs border ${stockTone(i.stock)}`}>
-                    {i.stock}
-                  </span>
+                      <div className="font-medium text-sm">{i.name}</div>
+                    </div>
+
+                    <div className="flex flex-col items-end gap-2">
+                      <span className={`px-2 py-0.5 rounded-full text-xs border ${stockTone(i.available_quantity)}`}>
+                        {i.available_quantity}
+                      </span>
+                    </div>
                 </div>
               ))}
             </div>

@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import Layout from '../components/Layout'
-import { getInventory, saveInventory } from '../data/store'
+import {
+  getEquipment,
+  addEquipment,
+  updateEquipmentStock
+} from '../services/equipmentService'
 
 export default function AdminScan() {
   const [category, setCategory] = useState('')
@@ -14,35 +18,53 @@ export default function AdminScan() {
   const scanRef = useRef(null)
 
   const LOW = 3
-  const categories = [...new Set(getInventory().map(i => i.category))].filter(Boolean)
+const categories = [...new Set(inventory.map(i => i.category))].filter(Boolean)
+
+const filtered = inventory.filter(i => {
+  const q = search.toLowerCase()
+
+  return (
+    i.name.toLowerCase().includes(q) ||
+    (i.category || '').toLowerCase().includes(q)
+  )
+})
 
   useEffect(() => {
     loadInventory()
     scanRef.current?.focus()
   }, [])
 
-  function loadInventory() {
-    setInventory(getInventory())
+  async function loadInventory() {
+  try {
+    const data = await getEquipment()
+    setInventory(data)
+  } catch (error) {
+    console.log(error.message)
   }
+}
 
-  function doSave() {
-    if (!category) return setStatus({ msg: 'กรุณาเลือกหมวดหมู่', ok: false })
-    if (!itemName.trim()) return setStatus({ msg: 'กรุณาใส่ชื่อ/สเปกสินค้า', ok: false })
-    if (qty <= 0) return setStatus({ msg: 'จำนวนต้องมากกว่า 0', ok: false })
+  async function doSave() {
+  if (!category) return setStatus({ msg: 'กรุณาเลือกหมวดหมู่', ok: false })
+  if (!itemName.trim()) return setStatus({ msg: 'กรุณาใส่ชื่อ/สเปกสินค้า', ok: false })
+  if (qty <= 0) return setStatus({ msg: 'จำนวนต้องมากกว่า 0', ok: false })
 
-    const inv = getInventory()
-    const idx = inv.findIndex(i => i.item.toLowerCase() === itemName.trim().toLowerCase())
-    if (idx !== -1) {
-      inv[idx].stock = Math.max(0, inv[idx].stock + qty)
+  try {
+    const found = inventory.find(
+      i => i.name.toLowerCase() === itemName.trim().toLowerCase()
+    )
+
+    if (found) {
+      const newQty = Number(found.available_quantity) + Number(qty)
+      await updateEquipmentStock(found.id, newQty)
     } else {
-      inv.push({
-        id: crypto.randomUUID(),
-        category,
-        item: itemName.trim(),
-        stock: qty
+      await addEquipment({
+        category: category.trim(),
+        name: itemName.trim(),
+        quantity: Number(qty),
+        available_quantity: Number(qty),
+        status: 'available'
       })
     }
-    saveInventory(inv)
 
     const newEntry = {
       barcode: scan,
@@ -51,18 +73,20 @@ export default function AdminScan() {
       qty,
       at: new Date().toLocaleString('th-TH')
     }
+
     setRecent(prev => [newEntry, ...prev].slice(0, 10))
     setStatus({ msg: `บันทึกแล้ว: ${itemName} (+${qty}) ในหมวด ${category}`, ok: true })
     setScan('')
+    setItemName('')
     setQty(1)
-    loadInventory()
-    scanRef.current?.focus()
-  }
 
-  const filtered = inventory.filter(i =>
-    !search || i.item.toLowerCase().includes(search.toLowerCase()) ||
-    (i.category || '').toLowerCase().includes(search.toLowerCase())
-  )
+    await loadInventory()
+    scanRef.current?.focus()
+  } catch (error) {
+    console.log('scan save error:', error)
+    setStatus({ msg: error.message || 'บันทึกไม่สำเร็จ', ok: false })
+  }
+}
 
   function stockTone(n) {
     if (n <= 0) return 'bg-rose-50 text-rose-700 border-rose-200'
@@ -93,7 +117,6 @@ export default function AdminScan() {
                 >
                   <option value="">— เลือกหมวดหมู่ —</option>
                   {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                  <option value="__new__">+ เพิ่มหมวดหมู่ใหม่</option>
                 </select>
               </div>
               {category === '__new__' && (
@@ -200,11 +223,11 @@ export default function AdminScan() {
                 <div key={i.id} className="border rounded-xl p-2 bg-white dark:bg-slate-900">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="font-medium text-sm">{i.item}</div>
-                      <div className="text-xs text-gray-400">{i.category}</div>
+                      <div className="font-medium text-sm">{i.name}</div>
+                      <div className="text-xs text-gray-400">{i.available_quantity}</div>
                     </div>
-                    <span className={`px-2 py-0.5 rounded-full text-xs border ${stockTone(i.stock)}`}>
-                      {i.stock}
+                    <span className={`px-2 py-0.5 rounded-full text-xs border ${stockTone(i.available_quantity)}`}>
+                      {i.available_quantity}
                     </span>
                   </div>
                 </div>

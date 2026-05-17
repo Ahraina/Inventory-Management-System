@@ -1,30 +1,91 @@
-import { createContext, useContext, useState } from 'react'
-import { findUser } from '../data/store'
+import { createContext, useContext, useEffect, useState } from 'react'
+import { supabase } from '../utils/supabase'
 
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => {
-    const saved = sessionStorage.getItem('auth_user')
-    return saved ? JSON.parse(saved) : null
-  })
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(true)
 
-  function login(email, password) {
-  const found = findUser(email.trim().toLowerCase(), password)
-  if (!found) return { ok: false, msg: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' }
-  const u = { id: found.id, email: found.email, name: found.name, role: found.role }
-  setUser(u)
-  sessionStorage.setItem('auth_user', JSON.stringify(u))
-  return { ok: true, role: found.role }
+  useEffect(() => {
+    checkSession()
+  }, [])
+
+  async function checkSession() {
+    try {
+      const { data } = await supabase.auth.getSession()
+      const sessionUser = data.session?.user
+
+      if (!sessionUser) {
+        setUser(null)
+        return
+      }
+
+      const profile = await getProfile(sessionUser.id)
+
+      setUser({
+        id: sessionUser.id,
+        email: sessionUser.email,
+        name: profile?.full_name || profile?.name || sessionUser.email,
+        role: profile?.role || 'user'
+      })
+    } catch (error) {
+      console.log(error.message)
+      setUser(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function getProfile(userId) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+
+  if (error) {
+    console.log('get profile error:', error.message)
+    return null
+  }
+
+  return data?.[0] || null
 }
 
-  function logout() {
+  async function login(email, password) {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password
+    })
+
+    if (error) {
+      return { ok: false, msg: error.message }
+    }
+
+    const profile = await getProfile(data.user.id)
+
+    console.log('LOGIN USER ID:', data.user.id)
+    console.log('LOGIN EMAIL:', data.user.email)
+    console.log('PROFILE FROM DB:', profile)
+
+    const u = {
+      id: data.user.id,
+      email: data.user.email,
+      name: profile?.full_name || profile?.name || data.user.email,
+      role: profile?.role || 'user'
+    }
+
+    setUser(u)
+
+    return { ok: true, role: u.role }
+  }
+
+  async function logout() {
+    await supabase.auth.signOut()
     setUser(null)
-    sessionStorage.removeItem('auth_user')
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, login, logout, loading }}>
       {children}
     </AuthContext.Provider>
   )

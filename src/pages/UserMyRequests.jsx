@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import Layout from '../components/Layout'
 import Badge from '../components/Badge'
-import { getRequests } from '../data/store'
+import { getMyBorrowRequests } from '../services/requestService'
 
 export default function UserMyRequests() {
   const { user } = useAuth()
@@ -10,12 +10,14 @@ export default function UserMyRequests() {
 
   useEffect(() => { load() }, [])
 
-  function load() {
-    const data = getRequests()
-      .filter(r => r.who === user.email)
-      .sort((a, b) => new Date(b.when) - new Date(a.when))
+async function load() {
+  try {
+    const data = await getMyBorrowRequests()
     setRequests(data)
+  } catch (error) {
+    console.log(error.message)
   }
+}
 
   return (
     <Layout>
@@ -58,11 +60,11 @@ export default function UserMyRequests() {
               {requests.map(r => (
                 <tr key={r.id} className="border-t">
                   <td className="px-4 py-2 whitespace-nowrap">
-                    {new Date(r.when).toLocaleString('th-TH')}
+                    {new Date(r.created_at || r.borrow_date).toLocaleString('th-TH')}
                   </td>
                   <td className="px-4 py-2 font-mono">{r.job_id || '-'}</td>
-                  <td className="px-4 py-2">{r.item}</td>
-                  <td className="px-4 py-2">{r.qty}</td>
+                  <td className="px-4 py-2">{r.equipment?.name || '-'}</td>
+                  <td className="px-4 py-2">{r.quantity}</td>
                   <td className="px-4 py-2"><Badge status={r.status} /></td>
                   <td className="px-4 py-2">{r.admin_note || '-'}</td>
                 </tr>

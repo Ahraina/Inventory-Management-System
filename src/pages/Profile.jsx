@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import Layout from '../components/Layout'
 import Badge from '../components/Badge'
-import { getRequests } from '../data/store'
+import { getMyBorrowRequests } from '../services/requestService'
 
 export default function Profile() {
   const { user } = useAuth()
@@ -13,17 +13,38 @@ export default function Profile() {
   const [myRequests, setMyRequests] = useState([])
 
   useEffect(() => {
-    // โหลดข้อมูลโปรไฟล์จาก localStorage
+  async function load() {
+
+    // โหลด profile local
     const saved = localStorage.getItem('profile_' + user?.email)
     if (saved) setForm(JSON.parse(saved))
 
-    // โหลดคำขอล่าสุด
-    const reqs = getRequests()
-      .filter(r => r.who === user?.email)
-      .sort((a, b) => new Date(b.when) - new Date(a.when))
-      .slice(0, 10)
-    setMyRequests(reqs)
-  }, [])
+    // โหลดคำขอจาก DB
+    try {
+      const reqs = await getMyBorrowRequests()
+
+      const mine = reqs
+        .filter(r => r.user_id === user?.id)
+        .slice(0, 10)
+
+      setMyRequests(
+        mine.map(r => ({
+          id: r.id,
+          when: r.created_at,
+          job_id: r.job_id,
+          item: r.equipment?.name || '-',
+          qty: r.quantity,
+          status: r.status
+        }))
+      )
+
+    } catch (error) {
+      console.log(error.message)
+    }
+  }
+
+  load()
+}, [])
 
   function handleSave() {
     localStorage.setItem('profile_' + user?.email, JSON.stringify(form))

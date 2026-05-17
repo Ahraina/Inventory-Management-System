@@ -1,7 +1,12 @@
 import { useState, useEffect } from 'react'
 import Layout from '../components/Layout'
 import Badge from '../components/Badge'
-import { getReturns, updateReturnStatus } from '../data/store'
+import {
+  getAllReturnRequests,
+  updateReturnRequestStatus
+} from '../services/requestService'
+
+import { updateEquipmentStock } from '../services/equipmentService'
 
 export default function AdminReturns() {
   const [rows, setRows] = useState([])
@@ -15,11 +20,29 @@ export default function AdminReturns() {
   useEffect(() => { load() }, [])
   useEffect(() => { applyFilter() }, [rows, search, filter])
 
-  function load() {
-    const data = getReturns().sort((a, b) => new Date(b.when) - new Date(a.when))
-    setRows(data)
+ async function load() {
+  try {
+    const data = await getAllReturnRequests()
+
+    const rows = data.map(r => ({
+      id: r.id,
+      borrow_request_id: r.borrow_request_id,
+      job_id: r.borrow_requests?.job_id,
+      item: r.borrow_requests?.equipment?.name || '-',
+      equipment_id: r.borrow_requests?.equipment?.id,
+      current_stock: r.borrow_requests?.equipment?.available_quantity || 0,
+      qty: r.quantity,
+      note: r.note,
+      status: r.status,
+      when: r.created_at
+    }))
+
+    setRows(rows)
     setSelected([])
+  } catch (error) {
+    console.log(error.message)
   }
+}
 
   function applyFilter() {
     const q = search.toLowerCase()
@@ -31,11 +54,27 @@ export default function AdminReturns() {
     }))
   }
 
-  function updateOne(id, st) {
-    updateReturnStatus(id, st, notes[id] || '')
+  async function updateOne(id, st) {
+  try {
+    const row = rows.find(r => r.id === id)
+    if (!row || row.status !== 'pending') {
+  return setStatus('รายการนี้ถูกดำเนินการไปแล้ว')
+}
+
+    await updateReturnRequestStatus(id, st)
+
+    if (st === 'approved' && row) {
+      const newQty = Number(row.current_stock) + Number(row.qty)
+      await updateEquipmentStock(row.equipment_id, newQty)
+    }
+
     setStatus(st === 'approved' ? '✅ อนุมัติแล้ว' : '❌ ปฏิเสธแล้ว')
-    load()
+    await load()
+  } catch (error) {
+    console.error('Return update error:', error)
+    setStatus(error.message || 'ทำรายการไม่สำเร็จ')
   }
+}
 
   function bulk(st) {
     if (!selected.length) return setStatus('ยังไม่ได้เลือกแถว')
@@ -152,21 +191,25 @@ export default function AdminReturns() {
                       className="w-full border border-gray-300 dark:border-slate-600 rounded-lg px-2 py-1 text-sm bg-white dark:bg-slate-900"
                     />
                   </td>
-                  <td className="px-3 py-2">
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => updateOne(r.id, 'approved')}
-                        className="px-3 py-1.5 rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 text-xs"
-                      >
-                        ✅ อนุมัติ
-                      </button>
-                      <button
-                        onClick={() => updateOne(r.id, 'rejected')}
-                        className="px-3 py-1.5 rounded-lg text-white bg-rose-600 hover:bg-rose-700 text-xs"
-                      >
-                        ❌ ปฏิเสธ
-                      </button>
-                    </div>
+                 <td className="px-3 py-2">
+                    {r.status === 'pending' ? (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => updateOne(r.id, 'approved')}
+                          className="px-3 py-1.5 rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 text-xs"
+                        >
+                          ✅ อนุมัติ
+                        </button>
+                        <button
+                          onClick={() => updateOne(r.id, 'rejected')}
+                          className="px-3 py-1.5 rounded-lg text-white bg-rose-600 hover:bg-rose-700 text-xs"
+                        >
+                          ❌ ปฏิเสธ
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-gray-400 text-xs">ดำเนินการแล้ว</span>
+                    )}
                   </td>
                 </tr>
               ))}

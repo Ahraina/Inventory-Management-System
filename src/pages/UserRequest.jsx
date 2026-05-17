@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import Layout from '../components/Layout'
-import { getInventory, addRequest } from '../data/store'
+import { getEquipment } from '../services/equipmentService'
+import { createBorrowRequest } from '../services/requestService'
 
 export default function UserRequest() {
   const { user } = useAuth()
@@ -19,68 +20,107 @@ export default function UserRequest() {
 
   useEffect(() => { load() }, [])
 
-  function load() {
-    const inv = getInventory()
+  async function load() {
+  try {
+    const inv = await getEquipment()
     setInventory(inv)
     const cats = [...new Set(inv.map(i => i.category))].filter(Boolean).sort()
     setCategories(cats)
+  } catch (error) {
+    console.log(error.message)
   }
+}
 
   const filteredItems = inventory
-    .filter(i => i.stock > 0)
-    .filter(i => !category || i.category === category)
-    .filter(i => !search || i.item.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => a.item.localeCompare(b.item, 'th'))
+  .filter(i => i.available_quantity > 0)
+  .filter(i => !category || i.category === category)
+  .filter(i => !search || (i.name || '').toLowerCase().includes(search.toLowerCase()))
+  .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'th'))
 
   function handleAdd() {
-    if (!item || qty <= 0) {
-      return setAddStatus({ msg: 'กรอกข้อมูลให้ถูกต้อง', ok: false })
-    }
-    const inv = inventory.find(i => i.item === item)
-    if (!inv || inv.stock <= 0) {
-      return setAddStatus({ msg: `${item} ไม่มีในคลัง`, ok: false })
-    }
-    if (qty > inv.stock) {
-      return setAddStatus({ msg: `${item} คงเหลือไม่พอ (เหลือ ${inv.stock})`, ok: false })
-    }
-    const cat = category || inv.category || ''
-    setCart(prev => [...prev, { category: cat, item, qty, reason }])
-    setItem('')
-    setQty(1)
-    setReason('')
-    setAddStatus({ msg: 'เพิ่มแล้ว', ok: true })
+  if (!item || qty <= 0) {
+    return setAddStatus({ msg: 'กรอกข้อมูลให้ถูกต้อง', ok: false })
   }
+
+  const inv = inventory.find(i => String(i.id) === String(item))
+
+  if (!inv || inv.available_quantity <= 0) {
+    return setAddStatus({ msg: 'อุปกรณ์นี้ไม่มีในคลัง', ok: false })
+  }
+
+  if (qty > inv.available_quantity) {
+    return setAddStatus({
+      msg: `${inv.name} คงเหลือไม่พอ (เหลือ ${inv.available_quantity})`,
+      ok: false
+    })
+  }
+
+  const cat = category || inv.category || ''
+
+  setCart(prev => [
+    ...prev,
+    {
+      equipment_id: inv.id,
+      category: cat,
+      item: inv.name,
+      qty,
+      reason
+    }
+  ])
+
+  setItem('')
+  setQty(1)
+  setReason('')
+  setAddStatus({ msg: 'เพิ่มแล้ว', ok: true })
+}
 
   function removeFromCart(i) {
     setCart(prev => prev.filter((_, idx) => idx !== i))
   }
 
-  function handleSubmit() {
-    if (!jobId.trim()) {
-      return setSubmitStatus({ msg: 'กรุณากรอก Job ID', ok: false })
-    }
-    if (!cart.length) {
-      return setSubmitStatus({ msg: 'ยังไม่มีรายการ', ok: false })
-    }
+ async function handleSubmit() {
+  console.log('submit clicked')
+  console.log('jobId:', jobId)
+  console.log('cart:', cart)
 
-    // เช็กสต็อกอีกครั้ง
-    const inv = getInventory()
+  if (!jobId.trim()) {
+    return setSubmitStatus({ msg: 'กรุณากรอก Job ID', ok: false })
+  }
+
+  if (!cart.length) {
+    return setSubmitStatus({ msg: 'ยังไม่มีรายการ', ok: false })
+  }
+
+  try {
     for (const r of cart) {
-      const found = inv.find(i => i.item === r.item)
-      if (!found || found.stock <= 0) {
-        return setSubmitStatus({ msg: `${r.item} ไม่มีในคลัง`, ok: false })
-      }
-      if (r.qty > found.stock) {
-        return setSubmitStatus({ msg: `${r.item} คงเหลือไม่พอ`, ok: false })
-      }
+      console.log('sending request:', r)
+
+      await createBorrowRequest({
+        user_id: user.id,
+        equipment_id: r.equipment_id,
+        quantity: r.qty,
+        job_id: jobId.trim().toUpperCase(),
+        borrow_date: new Date().toISOString().split('T')[0],
+        status: 'pending'
+      })
     }
 
-    addRequest(jobId.trim().toUpperCase(), cart, user.email)
     setCart([])
     setJobId('')
-    setSubmitStatus({ msg: `✅ ส่งคำขอแล้ว (JOB: ${jobId.trim().toUpperCase()})`, ok: true })
-    load()
+    setSubmitStatus({
+      msg: `✅ ส่งคำขอแล้ว (JOB: ${jobId.trim().toUpperCase()})`,
+      ok: true
+    })
+
+    await load()
+  } catch (error) {
+    console.error('Create request error:', error)
+    setSubmitStatus({
+      msg: error.message || 'ส่งคำขอไม่สำเร็จ',
+      ok: false
+    })
   }
+}
 
   return (
     <Layout>
@@ -130,8 +170,8 @@ export default function UserRequest() {
                 >
                   <option value="">-- เลือกอุปกรณ์ --</option>
                   {filteredItems.map(i => (
-                    <option key={i.id} value={i.item}>
-                      {i.item} (คงเหลือ: {i.stock})
+                    <option key={i.id} value={i.id}>
+                      {i.name} (คงเหลือ: {i.available_quantity})
                     </option>
                   ))}
                 </select>

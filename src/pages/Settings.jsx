@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import Layout from '../components/Layout'
-import { getUsers } from '../data/store'
+import { supabase } from '../utils/supabase'
+
 
 export default function Settings() {
   const { user } = useAuth()
@@ -23,24 +24,47 @@ export default function Settings() {
     document.documentElement.classList.toggle('dark', isDark)
   }
 
-  function handleChangePw() {
-    if (!pwOld || !pwNew || !pwNew2) {
-      return setPwStatus({ msg: 'กรอกให้ครบ', ok: false })
-    }
-    if (pwNew !== pwNew2) {
-      return setPwStatus({ msg: 'รหัสใหม่ไม่ตรงกัน', ok: false })
-    }
-    const users = getUsers()
-    const idx = users.findIndex(u => u.email === user.email)
-    if (idx === -1) return setPwStatus({ msg: 'ไม่พบผู้ใช้', ok: false })
-    if (users[idx].password !== pwOld) {
-      return setPwStatus({ msg: 'รหัสเดิมไม่ถูกต้อง', ok: false })
-    }
-    users[idx].password = pwNew
-    localStorage.setItem('inv_users', JSON.stringify(users))
-    setPwOld(''); setPwNew(''); setPwNew2('')
-    setPwStatus({ msg: 'เปลี่ยนรหัสผ่านแล้ว ✅', ok: true })
+  async function handleChangePw() {
+  if (!pwOld || !pwNew || !pwNew2) {
+    return setPwStatus({ msg: 'กรอกให้ครบ', ok: false })
   }
+
+  if (pwNew !== pwNew2) {
+    return setPwStatus({ msg: 'รหัสใหม่ไม่ตรงกัน', ok: false })
+  }
+
+  const { error: loginError } = await supabase.auth.signInWithPassword({
+    email: user.email,
+    password: pwOld
+  })
+
+  if (loginError) {
+    return setPwStatus({
+      msg: 'รหัสผ่านปัจจุบันไม่ถูกต้อง',
+      ok: false
+    })
+  }
+
+  const { error } = await supabase.auth.updateUser({
+    password: pwNew
+  })
+
+  if (error) {
+    return setPwStatus({
+      msg: error.message,
+      ok: false
+    })
+  }
+
+  setPwOld('')
+  setPwNew('')
+  setPwNew2('')
+
+  setPwStatus({
+    msg: 'เปลี่ยนรหัสผ่านแล้ว ✅',
+    ok: true
+  })
+}
 
   function handleSaveGeneral() {
     localStorage.setItem('notify', notify)

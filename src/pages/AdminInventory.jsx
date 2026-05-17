@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react'
 import Layout from '../components/Layout'
-import { getInventory, saveInventory } from '../data/store'
+import {
+  getEquipment,
+  addEquipment,
+  deleteEquipment,
+  updateEquipmentStock
+} from '../services/equipmentService'
 
 export default function AdminInventory() {
   const [inventory, setInventory] = useState([])
@@ -10,52 +15,80 @@ export default function AdminInventory() {
 
   useEffect(() => { load() }, [])
 
-  function load() {
-    setInventory(getInventory())
+async function load() {
+  try {
+    const data = await getEquipment()
+    console.log('equipment data:', data)
+    setInventory(data)
+  } catch (error) {
+    console.log('equipment error:', error)
+  }
+}
+
+async function handleAdd() {
+  console.log('clicked add')
+  console.log('newItem:', newItem)
+
+  if (!newItem.category || !newItem.item || !newItem.stock) {
+    return setStatus({ msg: 'กรอกข้อมูลให้ครบ', ok: false })
   }
 
-  function handleAdd() {
-    if (!newItem.category || !newItem.item || !newItem.stock) {
-      return setStatus({ msg: 'กรอกข้อมูลให้ครบ', ok: false })
-    }
-    const inv = getInventory()
-    const idx = inv.findIndex(i => i.item.toLowerCase() === newItem.item.toLowerCase())
-    if (idx !== -1) {
-      inv[idx].stock = Math.max(0, inv[idx].stock + Number(newItem.stock))
-    } else {
-      inv.push({
-        id: crypto.randomUUID(),
-        category: newItem.category.trim(),
-        item: newItem.item.trim(),
-        stock: Number(newItem.stock)
-      })
-    }
-    saveInventory(inv)
+  try {
+    const result = await addEquipment({
+      category: newItem.category.trim(),
+      name: newItem.item.trim(),
+      quantity: Number(newItem.stock),
+      available_quantity: Number(newItem.stock),
+      status: 'available'
+    })
+
+    console.log('insert result:', result)
+
     setNewItem({ category: '', item: '', stock: '' })
     setStatus({ msg: 'เพิ่มสินค้าเรียบร้อย', ok: true })
     load()
+  } catch (error) {
+    console.log('insert error:', error)
+    setStatus({ msg: error.message, ok: false })
   }
+}
 
-  function handleDelete(id) {
-    if (!confirm('ยืนยันลบสินค้านี้?')) return
-    const inv = getInventory().filter(i => i.id !== id)
-    saveInventory(inv)
+
+const handleDelete = async (id) => {
+  const confirmDelete = window.confirm('ต้องการลบอุปกรณ์นี้ใช่ไหม?')
+
+  if (!confirmDelete) return
+
+  try {
+    await deleteEquipment(id)
+    await load()
+  } catch (error) {
+    console.error('Delete equipment error:', error)
+    alert(error.message || 'ลบข้อมูลไม่สำเร็จ')
+  }
+}
+const handleUpdateStock = async (id, quantity) => {
+  try {
+    await updateEquipmentStock(id, Number(quantity))
+    await load()
+  } catch (error) {
+    console.error(error)
+    alert('อัปเดต stock ไม่สำเร็จ')
+  }
+}
+
+  async function handleStockEdit(id, val) {
+  try {
+    await updateEquipmentStock(id, val)
     load()
+  } catch (error) {
+    console.log(error.message)
   }
-
-  function handleStockEdit(id, val) {
-    const inv = getInventory()
-    const idx = inv.findIndex(i => i.id === id)
-    if (idx !== -1) {
-      inv[idx].stock = Math.max(0, Number(val))
-      saveInventory(inv)
-      load()
-    }
-  }
+}
 
   const filtered = inventory.filter(i =>
     !search ||
-    i.item.toLowerCase().includes(search.toLowerCase()) ||
+    i.name.toLowerCase().includes(search.toLowerCase()) ||
     (i.category || '').toLowerCase().includes(search.toLowerCase())
   )
 
@@ -142,21 +175,18 @@ export default function AdminInventory() {
                 {filtered.map(i => (
                   <tr key={i.id} className="border-t">
                     <td className="px-4 py-2 text-gray-500">{i.category}</td>
-                    <td className="px-4 py-2 font-medium">{i.item}</td>
+                    <td className="px-4 py-2 font-medium">{i.name}</td>
                     <td className="px-4 py-2 text-center">
                       <input
                         type="number" min="0"
-                        defaultValue={i.stock}
+                        defaultValue={i.available_quantity}
                         onBlur={e => handleStockEdit(i.id, e.target.value)}
-                        className={`w-20 text-center border border-gray-300 dark:border-slate-600 rounded-lg px-2 py-1 bg-white dark:bg-slate-900 ${stockColor(i.stock)}`}
+                        className={`w-20 text-center border border-gray-300 dark:border-slate-600 rounded-lg px-2 py-1 bg-white dark:bg-slate-900 ${stockColor(i.available_quantity)}`}
                       />
                     </td>
                     <td className="px-4 py-2 text-center">
-                      <button
-                        onClick={() => handleDelete(i.id)}
-                        className="text-rose-500 hover:text-rose-700 text-xs border border-rose-200 px-2 py-1 rounded-lg"
-                      >
-                        ลบ
+                      <button onClick={() => handleDelete(i.id)}>
+                            Delete
                       </button>
                     </td>
                   </tr>

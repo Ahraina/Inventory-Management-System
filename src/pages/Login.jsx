@@ -9,19 +9,25 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
 
-  function handleLogin() {
+async function handleLogin() {
   setError('')
-  console.log('email:', email)
-  console.log('password:', password)
-  console.log('users in storage:', localStorage.getItem('inv_users'))
-  
-  const res = login(email, password)
-  console.log('login result:', res)
-  
-  if (!res.ok) return setError(res.msg)
+
+  if (!email.trim()) {
+    return setError('กรุณากรอกอีเมล')
+  }
+
+  if (!password) {
+    return setError('กรุณากรอกรหัสผ่าน')
+  }
+
+  const res = await login(email, password)
+
+  if (!res.ok) {
+    return setError(res.msg)
+  }
+
   navigate(res.role === 'admin' ? '/admin/scan' : '/user/request')
 }
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <div className="bg-white p-8 rounded-2xl shadow-lg w-full max-w-md">
@@ -61,12 +67,11 @@ export default function Login() {
           >
             เข้าสู่ระบบ
           </button>
-        </div>
-
-        <div className="mt-6 p-4 bg-gray-50 rounded-xl text-sm text-gray-500 space-y-1">
-          <p className="font-medium text-gray-600">Demo Account:</p>
-          <p>👑 Admin: admin@demo.com / admin1234</p>
-          <p>👤 User: user@demo.com / user1234</p>
+          <button
+            onClick={() => navigate('/register')}
+            className="w-full border border-indigo-300 text-indigo-600 font-medium py-2.5 rounded-xl transition hover:bg-indigo-50"> 
+            สมัครสมาชิก
+          </button>
         </div>
       </div>
     </div>

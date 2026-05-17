@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react'
 import Layout from '../components/Layout'
 import Badge from '../components/Badge'
-import { getRequests, updateRequestStatus } from '../data/store'
+import {
+  getAllBorrowRequests,
+  updateBorrowRequestStatus
+} from '../services/requestService'
+import { updateEquipmentStock } from '../services/equipmentService'
 
 export default function AdminRequests() {
   const [jobs, setJobs] = useState([])
@@ -9,18 +13,25 @@ export default function AdminRequests() {
 
   useEffect(() => { load() }, [])
 
-  function load() {
-    const reqs = getRequests()
+  async function load() {
+  try {
+    const reqs = await getAllBorrowRequests()
     // จัดกลุ่มเป็น JOB
     const groups = {}
     reqs.forEach(r => {
       if (!r.job_id) return
       if (!groups[r.job_id]) {
-        groups[r.job_id] = { job_id: r.job_id, who: r.who, when: r.when, lines: [] }
+        groups[r.job_id] = {job_id: r.job_id, who: r.user_id || 'user', when: r.created_at || r.borrow_date, lines: [] }
       }
-      groups[r.job_id].lines.push({
-        id: r.id, item: r.item, qty: r.qty,
-        reason: r.reason, status: r.status, admin_note: r.admin_note
+          groups[r.job_id].lines.push({
+          id: r.id,
+          equipment_id: r.equipment?.id,
+          current_stock: r.equipment?.available_quantity || 0,
+          item: r.equipment?.name || '-',
+          qty: r.quantity,
+          reason: r.reason,
+          status: r.status,
+          admin_note: r.admin_note
       })
     })
     // คำนวณ status รวมของ JOB
@@ -30,15 +41,37 @@ export default function AdminRequests() {
       return g
     }).sort((a, b) => new Date(b.when) - new Date(a.when))
     setJobs(list)
-  }
+} catch (error) {
+  console.log(error.message)
+}
+}
 
-  function handleJobAction(job, action) {
+async function handleJobAction(job, action) {
+  try {
     const status = action === 'approve' ? 'approved' : 'rejected'
-    job.lines.forEach(line => {
-      updateRequestStatus(line.id, status)
-    })
-    load()
+
+    for (const line of job.lines) {
+      await updateBorrowRequestStatus(line.id, status)
+
+      if (status === 'approved') {
+        const newQty = Number(line.current_stock) - Number(line.qty)
+        console.log('stock update:', {
+          equipment_id: line.equipment_id,
+          current_stock: line.current_stock,
+          qty: line.qty,
+          newQty
+          })
+        await updateEquipmentStock(line.equipment_id, newQty)
+      }
+    }
+
+    await load()
+    alert(action === 'approve' ? 'อนุมัติสำเร็จ' : 'ปฏิเสธสำเร็จ')
+  } catch (error) {
+    console.error('Admin action error:', error)
+    alert(error.message || 'ทำรายการไม่สำเร็จ')
   }
+}
 
   const filtered = jobs.filter(j =>
     !search ||
@@ -90,7 +123,7 @@ export default function AdminRequests() {
                   <div>
                     <div className="font-semibold">JOB: {job.job_id}</div>
                     <div className="text-xs text-gray-500 mt-0.5">
-                      ผู้ขอ: {job.who} • รายการ: {job.lines.length} •{' '}
+                      ผู้ขอ: {job.profiles?.full_name || job.profiles?.email || job.user_id} • รายการ: {job.lines.length} •{' '}
                       ล่าสุด: {new Date(job.when).toLocaleString('th-TH')}
                     </div>
                   </div>
@@ -98,15 +131,25 @@ export default function AdminRequests() {
                     {jobStatusBadge(job.status)}
                     {job.status !== 'approved' && (
                       <button
-                        onClick={() => handleJobAction(job, 'approve')}
-                        className="px-3 py-1.5 rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 text-sm"
-                      >
-                        ✅ อนุมัติ
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        handleJobAction(job, 'approve')
+                      }}
+                      className="px-3 py-1.5 rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 text-sm"
+                    >
+                      ✅ อนุมัติ
                       </button>
                     )}
                     {job.status !== 'rejected' && (
                       <button
-                        onClick={() => handleJobAction(job, 'reject')}
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          handleJobAction(job, 'reject')
+                        }}
                         className="px-3 py-1.5 rounded-lg text-white bg-rose-600 hover:bg-rose-700 text-sm"
                       >
                         ❌ ปฏิเสธ
